@@ -9,6 +9,8 @@ def read_img(path, height=0, width=0):
     elif path[-4:] == '.npy':
         img = np.load(path)
 
+    img = np.nan_to_num(img)
+
     return img
 
 def generate_slc(img_i, img_q):
