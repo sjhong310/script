@@ -25,6 +25,7 @@ Annotation file should be structured like below.
 import argparse
 import os
 import numpy as np
+import matplotlib.pyplot as plt
 import xmltodict
 
 from tabulate import tabulate
@@ -44,17 +45,30 @@ def count_objs(xml_path, interval=5):
     """
     sizes = dict()
 
-    with open(xml_path, 'r') as f:
+    with open(xml_path, mode='r', encoding='utf-8') as f:
         doc = xmltodict.parse(f.read())
 
     annotations = doc['annotation']
-    objects = annotations['object'] if isinstance(annotations['object'], list) else [annotations['object']]
+
+    try:
+        objects = annotations['object'] if isinstance(annotations['object'], list) else [annotations['object']]
+    except:
+        return None
+
     for obj in objects:
         name = obj['name']
-        if float(obj['robndbox']['h']) > float(obj['robndbox']['w']):
-            length = float(obj['robndbox']['h'])
-        else:
-            length = float(obj['robndbox']['w'])
+        if 'robndbox' in obj.keys():
+            if float(obj['robndbox']['h']) > float(obj['robndbox']['w']):
+                length = float(obj['robndbox']['h'])
+            else:
+                length = float(obj['robndbox']['w'])
+        elif 'bndbox' in obj.keys():
+            len_x = float(obj['bndbox']['xmax']) - float(obj['bndbox']['xmin'])
+            len_y = float(obj['bndbox']['ymax']) - float(obj['bndbox']['ymin'])
+            if len_x > len_y:
+                length = len_x
+            else:
+                length = len_y
 
         if name not in sizes.keys():
             sizes[name] = dict()
@@ -99,6 +113,8 @@ def main():
     xml_paths = [os.path.join(args.home, xml_name) for xml_name in os.listdir(args.home)]
     for xml_path in xml_paths:
         size = count_objs(xml_path, args.interval)
+        if size is None:
+            continue
         for cat in size.keys():
             if cat not in sizes.keys():
                 sizes[cat] = dict()
