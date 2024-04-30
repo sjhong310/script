@@ -1,6 +1,8 @@
 """
 Convert Airbus and Dota annotation files to Json
 """
+from PIL import Image
+import math
 import os
 
 import argparse
@@ -39,56 +41,90 @@ def read_dota_txt(file):
     Args:
         file(str): Path to Dota text file
     Returns:
-        anno(dict): Airbus annotation
+        anno(dict): Dota annotation
+        image_name(str): Image name of the annotation
     """
     with open(file, 'r') as f:
         dota_annos = [line.strip() for line in f.readlines()][2:]  # Get rid of header info
 
-    anno = dict()
-    image_id = os.path.basename(file)
-    anno[image_id] = {'classes': [], 'objects': []}
+    image_name = os.path.basename(file).split('.')[0] + '.png'
+    anno = {'classes': [], 'objects': []}
     for dota_anno in dota_annos:
         items = dota_anno.split(' ')
+        if items[8] != 'plane':  # Read plane only.
+            continue
         obj = {'class': items[8],
                'rbbox': list(map(int, items[:8]))
                }
-        anno[image_id]['objects'].append(obj)
-        if obj['class'] not in anno[image_id]['classes']:
-            anno[image_id]['classes'].append(obj['class'])
+        anno['objects'].append(obj)
+        if obj['class'] not in anno['classes']:
+            anno['classes'].append(obj['class'])
 
-    return anno
+    return anno, image_name
 
 
-def read_file_as_json(file, type):
+def read_file_as_json(path, ann_type):
     """Read annotation file as json
 
      Args:
-        file(str): Path to Airbus CSV
-        type(str): Annotation type. types: [Airbus, Dota]
+        path(str): Path to Airbus CSV file or Dota directory
+        ann_type(str): Annotation type. types: [Airbus, Dota]
     Returns:
-        jsons(list(dict)): List of Json annotations.
+        dataset(dict): Dataset in COCO format.
     """
-    if not os.path.isfile(file):
-        raise FileNotFoundError(f'Path: {file}')
+    if not os.path.exists(path):
+        raise FileNotFoundError(f'Given path: {path}')
 
-    type = type.lower()
-    if type not in ['airbus', 'dota']:
-        raise NotImplementedError(f'Type is not suported: {type}')
+    ann_type = ann_type.lower()
+    if ann_type not in ['airbus', 'dota']:
+        raise NotImplementedError(f'Given type is not supported: {ann_type}')
 
-    if type == 'airbus':
-        objs = read_airbus_csv(file)
-    elif type == 'dota':
-        objs = read_dota_txt(file)
+    if ann_type == 'airbus':
+        annos = read_airbus_csv(path)
+    elif ann_type == 'dota':
+        annos = dict()
+        for p in os.listdir(path):
+            anno, fname = read_dota_txt(os.path.join(path, p))
+            if anno['objects']:
+                annos[fname] = anno
 
-    jsons = []
-    for key in objs.keys():
-        info = dict()
-        info['file'] = key
-        info['categories'] = objs[key]['classes']
-        info['objects'] = objs[key]['objects']
-        jsons.append(info)
+        # # To extract images contain plane in DOTA dataset.
+        # home = os.path.dirname(path)
+        # new_path = os.path.join(home, 'plane.json')
+        # with open(new_path, 'w') as f:
+        #     json.dump(list(annos.keys()), f, indent=4)
 
-    return jsons
+    dataset = {'info': f"Annotation from {ann_type} dataset",
+               'categories': [{
+                   'id': 1,  # COCO category id Starts from 1. I will use only 1 category(plane).
+                   'name': 'plane',
+                   'supercategory': 'plane'
+               }],
+               'images': [],
+               'annotations': []}
+    for img_idx, fname in enumerate(annos.keys()):
+        img_path = os.path.join(os.path.dirname(path), 'images', fname)
+        width, height = Image.open(img_path).size
+        img = {'id': img_idx + 1,
+               'width': width,
+               'height': height,
+               'file_name': fname}
+        dataset['images'].append(img)
+        for ann_idx, obj in enumerate(annos[fname]['objects']):
+            rbbox = obj['rbbox']
+            w = math.sqrt((rbbox[0] - rbbox[2]) ** 2 + (rbbox[1] - rbbox[3]) ** 2)
+            h = math.sqrt((rbbox[0] - rbbox[6]) ** 2 + (rbbox[1] - rbbox[7]) ** 2)
+            ann = {'id': ann_idx + 1,
+                   'image_id': img_idx + 1,
+                   'category_id': 1,
+                   'bbox': rbbox,
+                   'segmentation': [0],
+                   'area': round(w * h, 1),
+                   'iscrowd': 0}
+
+            dataset['annotations'].append(ann)
+
+    return dataset
 
 
 def parse_args():
@@ -97,13 +133,13 @@ def parse_args():
                                                'type directory of dota annotation files.')
     parser.add_argument('type', type=str, choices=['airbus', 'dota'], help='Type of Annotation file.'
                                                                            'Types: [airbus, dota]')
-    parser.add_argument('save', type=str, help='Save directory')
+    parser.add_argument('save', type=str, help='Path to a save file')
     args = parser.parse_args()
 
     if args.type == 'dota' and os.path.isfile(args.file):
-        raise Exception('For dota, input directory of annotation files.')
+        raise Exception('For dota, must input a path to a directory of annotation files.')
     if args.type == 'airbus' and os.path.isdir(args.file):
-        raise Exception('For airbus, input one annotation file.')
+        raise Exception('For airbus, must input a path to an annotation file.')
     if not os.path.exists(args.file):
         raise FileNotFoundError(f'Input file not found: {args.file}')
 
@@ -112,20 +148,11 @@ def parse_args():
 
 if __name__ == '__main__':
     args = parse_args()
-    os.makedirs(args.save, exist_ok=True)
+    os.makedirs(os.path.dirname(args.save), exist_ok=True)
 
-    if args.type == 'airbus':
-        jsons = read_file_as_json('airbus_annotations.csv', 'airbus')
-        for info in jsons:
-            file_path = os.path.join(args.save, info['file'].split('.')[0] + '.json')
-            with open(file_path, 'w') as f:
-                json.dump(info, f, indent=4)
-    elif args.type == 'dota':
-        files = os.listdir(args.file)
-        for file in files:
-            info = read_file_as_json(os.path.join(args.file, file), 'dota')[0]
-            file_path = os.path.join(args.save, info['file'].split('.')[0] + '.json')
-            with open(file_path, 'w') as f:
-                json.dump(info, f, indent=4)
+    dataset = read_file_as_json(args.file, args.type)
 
-    print('\nConvert is done.\n')
+    with open(args.save, 'w') as f:
+        json.dump(dataset, f, indent=4)
+
+    print('Convert is done.')
