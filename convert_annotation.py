@@ -102,6 +102,7 @@ def read_file_as_json(path, ann_type):
                }],
                'images': [],
                'annotations': []}
+    ann_idx = 1
     for img_idx, fname in enumerate(annos.keys()):
         img_path = os.path.join(os.path.dirname(path), 'images', fname)
         width, height = Image.open(img_path).size
@@ -110,7 +111,7 @@ def read_file_as_json(path, ann_type):
                'height': height,
                'file_name': fname}
         dataset['images'].append(img)
-        for ann_idx, obj in enumerate(annos[fname]['objects']):
+        for obj in annos[fname]['objects']:
             rbbox = obj['rbbox']
             w = math.sqrt((rbbox[0] - rbbox[2]) ** 2 + (rbbox[1] - rbbox[3]) ** 2)
             h = math.sqrt((rbbox[0] - rbbox[6]) ** 2 + (rbbox[1] - rbbox[7]) ** 2)
@@ -121,6 +122,7 @@ def read_file_as_json(path, ann_type):
                    'segmentation': [0],
                    'area': round(w * h, 1),
                    'iscrowd': 0}
+            ann_idx += 1
 
             dataset['annotations'].append(ann)
 
@@ -143,12 +145,16 @@ def parse_args():
     if not os.path.exists(args.file):
         raise FileNotFoundError(f'Input file not found: {args.file}')
 
+    if args.save[:-5] != '.json':
+        args.save = args.save[:-4] + '.json'
+        print('Save file: ', args.save)
+
     return args
 
 
 if __name__ == '__main__':
     args = parse_args()
-    os.makedirs(os.path.dirname(args.save), exist_ok=True)
+    os.makedirs(os.path.dirname(os.path.abspath(args.save)), exist_ok=True)
 
     dataset = read_file_as_json(args.file, args.type)
 
