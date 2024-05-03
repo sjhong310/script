@@ -145,9 +145,11 @@ def parse_args():
     if not os.path.exists(args.file):
         raise FileNotFoundError(f'Input file not found: {args.file}')
 
-    if args.save[:-5] != '.json':
-        args.save = args.save[:-4] + '.json'
-        print('Save file: ', args.save)
+    if os.path.isdir(args.save):
+        args.save = os.path.join(args.save, f'{args.type}.json')
+    else:
+        args.save = args.save.split('.')[0] + '.json'
+    print('Save file: ', args.save)
 
     return args
 
