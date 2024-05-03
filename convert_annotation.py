@@ -36,10 +36,11 @@ def read_airbus_csv(file):
     return anno
 
 
-def read_dota_txt(file):
+def read_dota_txt(file, plane_only=True):
     """Read Dota text file
     Args:
         file(str): Path to Dota text file
+        plane_only(bool): Read only plane annotation
     Returns:
         anno(dict): Dota annotation
         image_name(str): Image name of the annotation
@@ -51,7 +52,7 @@ def read_dota_txt(file):
     anno = {'classes': [], 'objects': []}
     for dota_anno in dota_annos:
         items = dota_anno.split(' ')
-        if items[8] != 'plane':  # Read plane only.
+        if plane_only and items[8] != 'plane':  # Read plane only.
             continue
         obj = {'class': items[8],
                'rbbox': list(map(int, items[:8]))
@@ -82,9 +83,17 @@ def read_file_as_json(path, ann_type):
     if ann_type == 'airbus':
         annos = read_airbus_csv(path)
     elif ann_type == 'dota':
+        plane_only = False  # Hard coding for convenience
+
+        CLASSES = ('plane', 'baseball-diamond', 'bridge', 'ground-track-field',
+                   'small-vehicle', 'large-vehicle', 'ship', 'tennis-court',
+                   'basketball-court', 'storage-tank', 'soccer-ball-field',
+                   'roundabout', 'harbor', 'swimming-pool', 'helicopter')
+        CLS_LUT = {cls: idx+1 for idx, cls in enumerate(CLASSES)}
+
         annos = dict()
         for p in os.listdir(path):
-            anno, fname = read_dota_txt(os.path.join(path, p))
+            anno, fname = read_dota_txt(os.path.join(path, p), plane_only=plane_only)
             if anno['objects']:
                 annos[fname] = anno
 
@@ -94,12 +103,18 @@ def read_file_as_json(path, ann_type):
         # with open(new_path, 'w') as f:
         #     json.dump(list(annos.keys()), f, indent=4)
 
+    if plane_only:
+        categories = [{
+                       'id': 1,  # COCO category id Starts from 1. I will use only 1 category(plane).
+                       'name': 'plane',
+                       'supercategory': 'plane'
+        }]
+    else:
+        categories = [{'id': idx,
+                       'name': cls,
+                       'supercategory': 'none'} for cls, idx in CLS_LUT.items()]
     dataset = {'info': f"Annotation from {ann_type} dataset",
-               'categories': [{
-                   'id': 1,  # COCO category id Starts from 1. I will use only 1 category(plane).
-                   'name': 'plane',
-                   'supercategory': 'plane'
-               }],
+               'categories': categories,
                'images': [],
                'annotations': []}
     ann_idx = 1
@@ -117,7 +132,7 @@ def read_file_as_json(path, ann_type):
             h = math.sqrt((rbbox[0] - rbbox[6]) ** 2 + (rbbox[1] - rbbox[7]) ** 2)
             ann = {'id': ann_idx + 1,
                    'image_id': img_idx + 1,
-                   'category_id': 1,
+                   'category_id': CLS_LUT[obj['class']],
                    'bbox': rbbox,
                    'segmentation': [0],
                    'area': round(w * h, 1),
