@@ -254,7 +254,6 @@ class ImageReader:
                 print('{}: [{}, {}]'.format(paths[idx], ds_list[idx].RasterYSize, ds_list[idx].RasterXSize))
             exit()
 
-        # driver = ds_red.GetDriver()
         driver = gdal.GetDriverByName("MEM")
         data_type = ds_blue.GetRasterBand(1).DataType
         ds_merged = driver.Create('', ds_blue.RasterXSize, ds_blue.RasterYSize, 3, data_type)
